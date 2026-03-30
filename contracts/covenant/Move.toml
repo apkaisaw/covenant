@@ -1,0 +1,5 @@
+[package]
+name = "covenant"
+edition = "2024"
+
+[dependencies]
