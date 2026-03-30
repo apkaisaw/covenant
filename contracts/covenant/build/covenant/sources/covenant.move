@@ -30,21 +30,37 @@ const STATUS_VIOLATED: u8 = 2;    // Breach detected, deposit forfeited
 const STATUS_COMPLETED: u8 = 3;   // Expired normally, deposits returned
 const STATUS_CANCELLED: u8 = 4;   // Cancelled before activation
 
+// Minimum deposit: 0.1 SUI (100_000_000 MIST)
+const MIN_DEPOSIT: u64 = 100_000_000;
+
 // === Errors ===
 
-const ENotPartyA: u64 = 0;
+/// Sender is not the Alliance B leader
 const ENotPartyB: u64 = 1;
+/// Sender is neither Alliance A nor Alliance B leader
+const ENotParty: u64 = 2;
+/// Deposit coin value is less than the required amount
 const EInsufficientDeposit: u64 = 3;
+/// Treaty is not in PENDING status
 const ETreatyNotPending: u64 = 4;
+/// Treaty is not in ACTIVE status
 const ETreatyNotActive: u64 = 5;
+/// Treaty has already expired
 const ETreatyExpired: u64 = 6;
+/// Treaty has not expired yet (cannot complete early)
 const ETreatyNotExpired: u64 = 7;
+/// Attacker character ID is not in either alliance's member list
 const EAttackerNotMember: u64 = 9;
+/// Victim character ID is not in either alliance's member list
 const EVictimNotMember: u64 = 10;
+/// Attacker and victim belong to the same alliance (not a treaty violation)
 const ESameAlliance: u64 = 11;
+/// Treaty type must be NAP (0) or CEASEFIRE (1)
 const EInvalidTreatyType: u64 = 12;
+/// Ceasefire treaties require a non-zero duration
 const EZeroDuration: u64 = 13;
-const EZeroDeposit: u64 = 14;
+/// Deposit required must be at least MIN_DEPOSIT (0.1 SUI)
+const EDepositTooLow: u64 = 14;
 
 // === Structs ===
 
@@ -158,7 +174,7 @@ public fun create_treaty(
     ctx: &mut TxContext,
 ) {
     assert!(treaty_type == TREATY_NAP || treaty_type == TREATY_CEASEFIRE, EInvalidTreatyType);
-    assert!(deposit_required > 0, EZeroDeposit);
+    assert!(deposit_required >= MIN_DEPOSIT, EDepositTooLow);
     if (treaty_type == TREATY_CEASEFIRE) {
         assert!(duration_ms > 0, EZeroDuration);
     };
@@ -272,7 +288,7 @@ public fun report_violation(
 
     // Check treaty hasn't expired
     if (treaty.expires_at_ms > 0) {
-        assert!(clock.timestamp_ms() <= treaty.expires_at_ms, ETreatyExpired);
+        assert!(clock.timestamp_ms() < treaty.expires_at_ms, ETreatyExpired);
     };
 
     // Determine which alliance the attacker and victim belong to
@@ -385,12 +401,13 @@ public fun complete_treaty(
     });
 }
 
-/// Cancel a pending treaty (only the creator can cancel before it's signed).
+/// Cancel a pending treaty. Either party can cancel before it's signed.
 public fun cancel_treaty(
     treaty: &mut Treaty,
     ctx: &mut TxContext,
 ) {
-    assert!(ctx.sender() == treaty.alliance_a_leader, ENotPartyA);
+    let sender = ctx.sender();
+    assert!(sender == treaty.alliance_a_leader || sender == treaty.alliance_b_leader, ENotParty);
     assert!(treaty.status == STATUS_PENDING, ETreatyNotPending);
 
     treaty.status = STATUS_CANCELLED;
@@ -422,7 +439,7 @@ public fun effective_at_ms(treaty: &Treaty): u64 { treaty.effective_at_ms }
 public fun violation_count(treaty: &Treaty): u64 { treaty.violation_count }
 public fun is_active(treaty: &Treaty, clock: &Clock): bool {
     if (treaty.status != STATUS_ACTIVE) { return false };
-    if (treaty.expires_at_ms > 0 && clock.timestamp_ms() > treaty.expires_at_ms) {
+    if (treaty.expires_at_ms > 0 && clock.timestamp_ms() >= treaty.expires_at_ms) {
         return false
     };
     true
@@ -432,6 +449,46 @@ public fun is_member_a(treaty: &Treaty, character_id: u64): bool {
 }
 public fun is_member_b(treaty: &Treaty, character_id: u64): bool {
     treaty.alliance_b_members.contains(character_id)
+}
+
+/// Check if a killmail (attacker/victim pair) would constitute a treaty violation.
+/// Returns (is_violation, violating_alliance_leader) — enables trustless, decentralized
+/// verification without relying on the oracle. Anyone can call this to audit whether
+/// a specific kill violates a given treaty.
+public fun verify_violation(
+    treaty: &Treaty,
+    attacker_character_id: u64,
+    victim_character_id: u64,
+    clock: &Clock,
+): (bool, address) {
+    // Treaty must be active and not expired
+    if (!is_active(treaty, clock)) { return (false, @0x0) };
+
+    let attacker_in_a = treaty.alliance_a_members.contains(attacker_character_id);
+    let attacker_in_b = treaty.alliance_b_members.contains(attacker_character_id);
+    let victim_in_a = treaty.alliance_a_members.contains(victim_character_id);
+    let victim_in_b = treaty.alliance_b_members.contains(victim_character_id);
+
+    // Both must be members of one of the two alliances
+    if (!attacker_in_a && !attacker_in_b) { return (false, @0x0) };
+    if (!victim_in_a && !victim_in_b) { return (false, @0x0) };
+
+    // Cross-alliance kill = violation
+    if (attacker_in_a && victim_in_b) {
+        (true, treaty.alliance_a_leader)
+    } else if (attacker_in_b && victim_in_a) {
+        (true, treaty.alliance_b_leader)
+    } else {
+        // Same alliance — not a treaty violation
+        (false, @0x0)
+    }
+}
+
+// === Test Only ===
+
+#[test_only]
+public fun test_init(ctx: &mut TxContext) {
+    init(ctx);
 }
 
 // === Internal Helpers ===
