@@ -151,66 +151,51 @@ v1 is sufficient for hackathon scope. The architecture is designed so that upgra
 
 | Field | Value |
 |-------|-------|
-| Package ID | `0xc48189767a999e843bcfc6ad8fcfca8a259935f7807d0c971b199af10a682044` |
-| OracleCap | `0x080a0bcbb2c511cbaf711b00ae9b65e1769238349648faae7df8e24928961e7d` |
+| Package ID | `0xdc38becdb1221fdf43444a50b2950bebb3ab47285df8ee756553973995e55670` |
+| TreatyRegistry | `0x99b678e3952d2334ed1fc58ecbdd183e5e396fc181e5fcd690de35e9a3a414a0` |
 | Network | Sui Testnet |
+| Frontend | [covenant-eve.vercel.app](https://covenant-eve.vercel.app) |
 
-## Quick Start
+## Try It
 
-Create a Non-Aggression Pact (Alliance A):
+### Web (Browser)
 
-```bash
-sui client call \
-  --package 0xc48189767a999e843bcfc6ad8fcfca8a259935f7807d0c971b199af10a682044 \
-  --module covenant \
-  --function create_treaty \
-  --args 0 \                           # treaty_type: 0 = NAP
-         '"Non-Aggression Pact"' \     # description
-         '"Alpha Fleet"' \             # alliance_a_name
-         '"Beta Corp"' \               # alliance_b_name
-         0xB_LEADER_ADDRESS \          # alliance_b_leader
-         '[1001, 1002, 1003]' \        # members_a (character IDs)
-         500000000 \                   # deposit_required (0.5 SUI)
-         0 \                           # duration_ms (0 = permanent)
-         COIN_OBJECT_ID \              # deposit coin
-         0x6                           # Clock
-```
+Open [covenant-eve.vercel.app](https://covenant-eve.vercel.app), connect a Sui wallet (Testnet), and interact with treaties: browse, propose, sign, or cancel. CRT terminal aesthetic with graduated penalty visualization.
 
-Alliance B co-signs:
+### CLI (Interactive)
+
+Create a treaty from the terminal with a guided interactive flow:
 
 ```bash
-sui client call \
-  --package 0xc48189767a999e843bcfc6ad8fcfca8a259935f7807d0c971b199af10a682044 \
-  --module covenant \
-  --function sign_treaty \
-  --args TREATY_OBJECT_ID \
-         '[2001, 2002, 2003]' \        # members_b (character IDs)
-         COIN_OBJECT_ID \              # deposit coin
-         0x6                           # Clock
+cd demo && npm install
+cp .env.example .env   # fill in LEADER_A_KEY
+npx tsx create.ts       # prompts for counterparty address, confirms, submits
 ```
 
-## KillMail Monitor (Off-chain Indexer)
+One input (counterparty address) + one confirmation (y/n) = treaty on-chain.
 
-The `indexer/` directory contains a TypeScript service that completes the enforcement loop:
+### Demo Script
 
+Watch the full treaty lifecycle in ~36 seconds -- graduated penalty escalation from first strike to treaty termination:
+
+```bash
+npx tsx demo.ts --dry-run   # simulated output, no transactions
+npx tsx demo.ts             # live mode with real Sui transactions
 ```
-indexer/
-  config.ts    -- environment + Sui client setup
-  graphql.ts   -- KillmailCreatedEvent polling with cursor pagination
-  treaties.ts  -- treaty loading, violation matching, TX submission
-  monitor.ts   -- orchestration loop
-```
+
+### KillMail Monitor (Off-chain Indexer)
+
+The `indexer/` directory completes the enforcement loop -- polls `KillmailCreatedEvent` via Sui GraphQL, matches against treaty member lists, submits `report_violation()`:
 
 ```bash
 cd indexer && npm install
-cp .env.example .env   # fill in ORACLE_PRIVATE_KEY and WORLD_PACKAGE_ID
-npx tsx monitor.ts             # live mode
-npx tsx monitor.ts --dry-run   # log matches without submitting transactions
+cp .env.example .env
+npx tsx monitor.ts --dry-run
 ```
 
-## Tests
+### Tests
 
-25 unit tests covering treaty lifecycle, graduated penalty escalation, registry reputation, and edge cases:
+25 unit tests covering treaty lifecycle, graduated penalty escalation, and registry reputation:
 
 ```bash
 cd contracts/covenant && sui move test
