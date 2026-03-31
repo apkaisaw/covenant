@@ -1,1 +1,7 @@
 SPEC.md
+.DS_Store
+node_modules/
+.env
+contracts/covenant/build/
+dapp/dist/
+dapp/.vercel/
