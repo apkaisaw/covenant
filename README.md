@@ -40,13 +40,26 @@ Alliance A proposes treaty (terms + member list + SUI deposit)
 
 ## Technical Architecture
 
+### Module Structure
+
+```
+covenant/sources/
+  covenant.move        -- Treaty lifecycle, graduated penalty, deposit escrow
+  treaty_registry.move -- Global treaty index, per-alliance reputation stats
+  gate_enforcer.move   -- Smart Gate extension: deny passage to violating alliances
+```
+
+Three modules that compose into a system: treaties create economic stakes, the registry tracks reputation across all treaties, and the gate enforcer extends consequences into physical space.
+
 ### Contract Objects
 
-| Object | Type | Description |
-|--------|------|-------------|
-| `Treaty` | Shared | Treaty state: parties, member tables, deposits, status, expiry |
-| `OracleCap` | Owned | Capability for the violation-reporting oracle service |
-| `ViolationRecord` | Owned | Immutable evidence: attacker, victim, killmail ID, compensation |
+| Object | Type | Module | Description |
+|--------|------|--------|-------------|
+| `Treaty` | Shared | covenant | Treaty state: parties, member tables, deposits, status, expiry |
+| `OracleCap` | Owned | covenant | Capability for the violation-reporting oracle service |
+| `ViolationRecord` | Owned | covenant | Immutable evidence: attacker, victim, killmail ID, compensation |
+| `TreatyRegistry` | Shared | treaty_registry | Global treaty index + per-alliance reputation stats |
+| `GateConfig` | Shared | gate_enforcer | Links Smart Gates to treaties for passage enforcement |
 
 ### Entry Functions
 
@@ -98,16 +111,14 @@ PENDING --[sign_treaty]--> ACTIVE --[report_violation x3]--> VIOLATED
                               |---[report_violation x1-2]--> ACTIVE (penalty applied)
 ```
 
-## Composability
+## Composability (Implemented)
 
-Covenant's treaty state is designed to be consumed by other protocols:
+Covenant is a three-module system, not a single contract:
 
-- **Smart Gate integration**: A gate extension can call `is_active()` and `verify_violation()` to deny passage to members of alliances that violated a treaty -- enforcing diplomatic consequences at the infrastructure level.
-- **Reputation systems**: Third-party contracts can index `TreatyViolated` and `TreatyCompleted` events to build alliance compliance scores. An alliance that honors 10 treaties has a verifiable on-chain reputation.
-- **Prediction markets**: "Will Alliance X violate Treaty Y before expiry?" becomes a tradeable position, with `verify_violation()` providing trustless resolution.
-- **Insurance protocols**: Underwriters can price coverage based on treaty violation history -- alliances with clean records get cheaper premiums.
-
-The `verify_violation()` view function is the composability primitive: any contract can independently check whether a killmail violates a treaty without trusting the oracle.
+- **Smart Gate enforcement** (`gate_enforcer.move`): Gate owners link their gates to treaties. The extension checks each character's alliance status before issuing a `JumpPermit` -- members of violating alliances are denied passage. Diplomacy has physical consequences. Uses the EVE world contract's `gate::issue_jump_permit<CovenantAuth>()` pattern.
+- **Alliance reputation** (`treaty_registry.move`): Every treaty signing, violation, and completion updates per-alliance statistics. `alliance_honor_rate()` returns compliance in basis points (0-10000). An alliance that honored 8/10 treaties has an on-chain reputation score of 8000 bps -- queryable by any contract.
+- **Prediction markets**: `verify_violation()` provides trustless resolution for "Will Alliance X violate Treaty Y?" positions.
+- **Insurance protocols**: Underwriters can call `alliance_stats()` to price coverage based on violation history.
 
 ## Oracle Decentralization Roadmap
 
@@ -199,7 +210,7 @@ npx tsx monitor.ts --dry-run   # log matches without submitting transactions
 
 ## Tests
 
-24 unit tests covering treaty lifecycle, graduated penalty escalation, and edge cases:
+25 unit tests covering treaty lifecycle, graduated penalty escalation, registry reputation, and edge cases:
 
 ```bash
 cd contracts/covenant && sui move test

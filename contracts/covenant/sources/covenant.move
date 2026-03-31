@@ -16,6 +16,7 @@ use sui::event;
 use sui::sui::SUI;
 use sui::table::{Self, Table};
 use std::string::{String, utf8};
+use covenant::treaty_registry::{Self, TreatyRegistry};
 
 // === Constants ===
 
@@ -238,8 +239,10 @@ public fun create_treaty(
 }
 
 /// Alliance B leader signs the treaty, deposits matching SUI, and the treaty becomes active.
+/// Registers the treaty in the global TreatyRegistry for reputation tracking.
 public fun sign_treaty(
     treaty: &mut Treaty,
+    registry: &mut TreatyRegistry,
     members_b: vector<u64>,
     mut deposit: Coin<SUI>,
     clock: &Clock,
@@ -272,6 +275,14 @@ public fun sign_treaty(
         treaty.expires_at_ms = treaty.effective_at_ms + duration;
     };
 
+    // Register in global treaty registry for reputation tracking
+    treaty_registry::register_treaty(
+        registry,
+        object::id(treaty),
+        treaty.alliance_a_leader,
+        treaty.alliance_b_leader,
+    );
+
     event::emit(TreatySigned {
         treaty_id: object::id(treaty),
         alliance_b_leader: ctx.sender(),
@@ -286,6 +297,7 @@ public fun sign_treaty(
 public fun report_violation(
     _oracle: &OracleCap,
     treaty: &mut Treaty,
+    registry: &mut TreatyRegistry,
     attacker_character_id: u64,
     victim_character_id: u64,
     killmail_id: u64,
@@ -381,6 +393,9 @@ public fun report_violation(
         treaty.status = STATUS_VIOLATED;
     };
 
+    // Update alliance reputation in global registry
+    treaty_registry::record_violation(registry, violating_leader, compensation);
+
     // Create immutable violation record
     let record = ViolationRecord {
         id: object::new(ctx),
@@ -407,6 +422,7 @@ public fun report_violation(
 /// Anyone can call this once the treaty has expired.
 public fun complete_treaty(
     treaty: &mut Treaty,
+    registry: &mut TreatyRegistry,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
@@ -415,6 +431,13 @@ public fun complete_treaty(
     assert!(clock.timestamp_ms() > treaty.expires_at_ms, ETreatyNotExpired);
 
     treaty.status = STATUS_COMPLETED;
+
+    // Both alliances honored the treaty
+    treaty_registry::record_completion(
+        registry,
+        treaty.alliance_a_leader,
+        treaty.alliance_b_leader,
+    );
 
     // Return deposits to both parties
     let a_amount = balance::value(&treaty.alliance_a_deposit);

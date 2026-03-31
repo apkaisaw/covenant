@@ -3,3 +3,9 @@ name = "covenant"
 edition = "2024"
 
 [dependencies]
+world = { local = "../../../../_analysis/world-contracts/contracts/world" }
+
+[environments]
+testnet_internal = "4c78adac"
+testnet_utopia = "4c78adac"
+testnet_stillness = "4c78adac"

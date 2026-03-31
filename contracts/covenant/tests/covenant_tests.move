@@ -6,6 +6,7 @@ use sui::clock::{Self, Clock};
 use sui::coin::{Self, Coin};
 use sui::sui::SUI;
 use covenant::covenant::{Self, Treaty, OracleCap, ViolationRecord};
+use covenant::treaty_registry::{Self, TreatyRegistry};
 
 // === Test addresses ===
 const DEPLOYER: address = @0xDEAD;
@@ -16,8 +17,8 @@ const LEADER_B: address = @0xB;
 
 fun setup_scenario(): Scenario {
     let mut scenario = ts::begin(DEPLOYER);
-    // init creates OracleCap for deployer
     covenant::test_init(scenario.ctx());
+    treaty_registry::test_init(scenario.ctx());
     scenario
 }
 
@@ -51,22 +52,14 @@ fun test_create_treaty_nap() {
         let clock = create_clock(1000, scenario.ctx());
         let deposit_coin = mint_sui(ONE_SUI, scenario.ctx());
         covenant::create_treaty(
-            0, // NAP
-            b"Non-Aggression Pact between Alpha and Beta",
-            b"Alpha",
-            b"Beta",
-            LEADER_B,
-            members_a(),
-            DEPOSIT,
-            0, // no expiry for NAP
-            deposit_coin,
-            &clock,
-            scenario.ctx(),
+            0, b"Non-Aggression Pact between Alpha and Beta",
+            b"Alpha", b"Beta", LEADER_B,
+            members_a(), DEPOSIT, 0,
+            deposit_coin, &clock, scenario.ctx(),
         );
         clock::destroy_for_testing(clock);
     };
 
-    // Treaty should exist as shared object
     scenario.next_tx(LEADER_A);
     {
         let treaty = scenario.take_shared<Treaty>();
@@ -94,17 +87,9 @@ fun test_create_treaty_ceasefire_with_expiry() {
         let clock = create_clock(1000, scenario.ctx());
         let deposit_coin = mint_sui(ONE_SUI, scenario.ctx());
         covenant::create_treaty(
-            1, // CEASEFIRE
-            b"72h ceasefire",
-            b"Alpha",
-            b"Beta",
-            LEADER_B,
-            members_a(),
-            DEPOSIT,
-            ONE_DAY_MS * 3, // 72 hours
-            deposit_coin,
-            &clock,
-            scenario.ctx(),
+            1, b"72h ceasefire", b"Alpha", b"Beta", LEADER_B,
+            members_a(), DEPOSIT, ONE_DAY_MS * 3,
+            deposit_coin, &clock, scenario.ctx(),
         );
         clock::destroy_for_testing(clock);
     };
@@ -112,7 +97,7 @@ fun test_create_treaty_ceasefire_with_expiry() {
     scenario.next_tx(LEADER_A);
     {
         let treaty = scenario.take_shared<Treaty>();
-        assert!(covenant::treaty_type(&treaty) == 1); // CEASEFIRE
+        assert!(covenant::treaty_type(&treaty) == 1);
         assert!(covenant::expires_at_ms(&treaty) > 0);
         ts::return_shared(treaty);
     };
@@ -124,27 +109,17 @@ fun test_create_treaty_ceasefire_with_expiry() {
 #[expected_failure(abort_code = 14)] // EDepositTooLow
 fun test_create_treaty_deposit_too_low() {
     let mut scenario = setup_scenario();
-
     scenario.next_tx(LEADER_A);
     {
         let clock = create_clock(1000, scenario.ctx());
         let deposit_coin = mint_sui(ONE_SUI, scenario.ctx());
         covenant::create_treaty(
-            0,
-            b"test",
-            b"A",
-            b"B",
-            LEADER_B,
-            members_a(),
-            1, // 1 MIST — below minimum
-            0,
-            deposit_coin,
-            &clock,
-            scenario.ctx(),
+            0, b"test", b"A", b"B", LEADER_B,
+            members_a(), 1, 0,
+            deposit_coin, &clock, scenario.ctx(),
         );
         clock::destroy_for_testing(clock);
     };
-
     scenario.end();
 }
 
@@ -152,27 +127,17 @@ fun test_create_treaty_deposit_too_low() {
 #[expected_failure(abort_code = 12)] // EInvalidTreatyType
 fun test_create_treaty_invalid_type() {
     let mut scenario = setup_scenario();
-
     scenario.next_tx(LEADER_A);
     {
         let clock = create_clock(1000, scenario.ctx());
         let deposit_coin = mint_sui(ONE_SUI, scenario.ctx());
         covenant::create_treaty(
-            99, // invalid
-            b"test",
-            b"A",
-            b"B",
-            LEADER_B,
-            members_a(),
-            DEPOSIT,
-            0,
-            deposit_coin,
-            &clock,
-            scenario.ctx(),
+            99, b"test", b"A", b"B", LEADER_B,
+            members_a(), DEPOSIT, 0,
+            deposit_coin, &clock, scenario.ctx(),
         );
         clock::destroy_for_testing(clock);
     };
-
     scenario.end();
 }
 
@@ -184,7 +149,6 @@ fun test_create_treaty_invalid_type() {
 fun test_sign_treaty() {
     let mut scenario = setup_scenario();
 
-    // Create treaty
     scenario.next_tx(LEADER_A);
     {
         let clock = create_clock(1000, scenario.ctx());
@@ -197,25 +161,23 @@ fun test_sign_treaty() {
         clock::destroy_for_testing(clock);
     };
 
-    // Sign treaty as B
     scenario.next_tx(LEADER_B);
     {
         let mut treaty = scenario.take_shared<Treaty>();
+        let mut registry = scenario.take_shared<TreatyRegistry>();
         let clock = create_clock(2000, scenario.ctx());
         let deposit_coin = mint_sui(ONE_SUI, scenario.ctx());
         covenant::sign_treaty(
-            &mut treaty,
-            members_b(),
-            deposit_coin,
-            &clock,
-            scenario.ctx(),
+            &mut treaty, &mut registry,
+            members_b(), deposit_coin, &clock, scenario.ctx(),
         );
         assert!(covenant::status(&treaty) == 1); // ACTIVE
         assert!(covenant::effective_at_ms(&treaty) == 2000);
         assert!(covenant::is_member_b(&treaty, 2001));
-        assert!(covenant::is_member_b(&treaty, 2002));
+        assert!(treaty_registry::treaty_count(&registry) == 1);
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
     };
 
     scenario.end();
@@ -238,31 +200,28 @@ fun test_sign_treaty_wrong_sender() {
         clock::destroy_for_testing(clock);
     };
 
-    // Try to sign as A (should fail)
     scenario.next_tx(LEADER_A);
     {
         let mut treaty = scenario.take_shared<Treaty>();
+        let mut registry = scenario.take_shared<TreatyRegistry>();
         let clock = create_clock(2000, scenario.ctx());
         let deposit_coin = mint_sui(ONE_SUI, scenario.ctx());
         covenant::sign_treaty(
-            &mut treaty,
-            members_b(),
-            deposit_coin,
-            &clock,
-            scenario.ctx(),
+            &mut treaty, &mut registry,
+            members_b(), deposit_coin, &clock, scenario.ctx(),
         );
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
     };
 
     scenario.end();
 }
 
 // ============================================================
-// Violation reporting
+// Violation reporting (graduated penalty)
 // ============================================================
 
-/// Helper: create and sign a NAP treaty, return scenario ready for next action
 fun create_active_treaty(scenario: &mut Scenario) {
     scenario.next_tx(LEADER_A);
     {
@@ -278,13 +237,16 @@ fun create_active_treaty(scenario: &mut Scenario) {
     scenario.next_tx(LEADER_B);
     {
         let mut treaty = scenario.take_shared<Treaty>();
+        let mut registry = scenario.take_shared<TreatyRegistry>();
         let clock = create_clock(2000, scenario.ctx());
         let deposit_coin = mint_sui(ONE_SUI, scenario.ctx());
         covenant::sign_treaty(
-            &mut treaty, members_b(), deposit_coin, &clock, scenario.ctx(),
+            &mut treaty, &mut registry,
+            members_b(), deposit_coin, &clock, scenario.ctx(),
         );
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
     };
 }
 
@@ -303,18 +265,21 @@ fun create_active_ceasefire(scenario: &mut Scenario, duration_ms: u64) {
     scenario.next_tx(LEADER_B);
     {
         let mut treaty = scenario.take_shared<Treaty>();
+        let mut registry = scenario.take_shared<TreatyRegistry>();
         let clock = create_clock(2000, scenario.ctx());
         let deposit_coin = mint_sui(ONE_SUI, scenario.ctx());
         covenant::sign_treaty(
-            &mut treaty, members_b(), deposit_coin, &clock, scenario.ctx(),
+            &mut treaty, &mut registry,
+            members_b(), deposit_coin, &clock, scenario.ctx(),
         );
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
     };
 }
 
 #[test]
-fun test_report_violation_a_attacks_b_graduated() {
+fun test_report_violation_graduated() {
     let mut scenario = setup_scenario();
     create_active_treaty(&mut scenario);
 
@@ -323,25 +288,22 @@ fun test_report_violation_a_attacks_b_graduated() {
     {
         let oracle = scenario.take_from_sender<OracleCap>();
         let mut treaty = scenario.take_shared<Treaty>();
+        let mut registry = scenario.take_shared<TreatyRegistry>();
         let clock = create_clock(5000, scenario.ctx());
         covenant::report_violation(
-            &oracle, &mut treaty,
-            1001, 2001, 42,
-            &clock, scenario.ctx(),
+            &oracle, &mut treaty, &mut registry,
+            1001, 2001, 42, &clock, scenario.ctx(),
         );
         assert!(covenant::status(&treaty) == 1); // still ACTIVE
         assert!(covenant::violation_count(&treaty) == 1);
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
         scenario.return_to_sender(oracle);
     };
 
-    // B receives ViolationRecord
     scenario.next_tx(LEADER_B);
-    {
-        let record = scenario.take_from_sender<ViolationRecord>();
-        scenario.return_to_sender(record);
-    };
+    { let r = scenario.take_from_sender<ViolationRecord>(); scenario.return_to_sender(r); };
 
     scenario.end();
 }
@@ -351,56 +313,70 @@ fun test_graduated_penalty_escalation() {
     let mut scenario = setup_scenario();
     create_active_treaty(&mut scenario);
 
-    // 1st violation: 20% of deposit (0.5 SUI * 20% = 0.1 SUI)
+    // 1st violation: 20%
     scenario.next_tx(DEPLOYER);
     {
         let oracle = scenario.take_from_sender<OracleCap>();
         let mut treaty = scenario.take_shared<Treaty>();
+        let mut registry = scenario.take_shared<TreatyRegistry>();
         let clock = create_clock(5000, scenario.ctx());
         covenant::report_violation(
-            &oracle, &mut treaty, 1001, 2001, 1, &clock, scenario.ctx(),
+            &oracle, &mut treaty, &mut registry,
+            1001, 2001, 1, &clock, scenario.ctx(),
         );
-        assert!(covenant::status(&treaty) == 1); // ACTIVE
+        assert!(covenant::status(&treaty) == 1);
         assert!(covenant::violation_count(&treaty) == 1);
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
         scenario.return_to_sender(oracle);
     };
-    // Collect ViolationRecord
     scenario.next_tx(LEADER_B);
     { let r = scenario.take_from_sender<ViolationRecord>(); scenario.return_to_sender(r); };
 
-    // 2nd violation: 40% of deposit (0.5 SUI * 40% = 0.2 SUI)
+    // 2nd violation: 40%
     scenario.next_tx(DEPLOYER);
     {
         let oracle = scenario.take_from_sender<OracleCap>();
         let mut treaty = scenario.take_shared<Treaty>();
+        let mut registry = scenario.take_shared<TreatyRegistry>();
         let clock = create_clock(6000, scenario.ctx());
         covenant::report_violation(
-            &oracle, &mut treaty, 1002, 2002, 2, &clock, scenario.ctx(),
+            &oracle, &mut treaty, &mut registry,
+            1002, 2002, 2, &clock, scenario.ctx(),
         );
-        assert!(covenant::status(&treaty) == 1); // still ACTIVE
+        assert!(covenant::status(&treaty) == 1);
         assert!(covenant::violation_count(&treaty) == 2);
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
         scenario.return_to_sender(oracle);
     };
     scenario.next_tx(LEADER_B);
     { let r = scenario.take_from_sender<ViolationRecord>(); scenario.return_to_sender(r); };
 
-    // 3rd violation: 100% remaining, treaty TERMINATED
+    // 3rd violation: 100%, treaty TERMINATED
     scenario.next_tx(DEPLOYER);
     {
         let oracle = scenario.take_from_sender<OracleCap>();
         let mut treaty = scenario.take_shared<Treaty>();
+        let mut registry = scenario.take_shared<TreatyRegistry>();
         let clock = create_clock(7000, scenario.ctx());
         covenant::report_violation(
-            &oracle, &mut treaty, 1003, 2003, 3, &clock, scenario.ctx(),
+            &oracle, &mut treaty, &mut registry,
+            1003, 2003, 3, &clock, scenario.ctx(),
         );
-        assert!(covenant::status(&treaty) == 2); // VIOLATED (terminated)
+        assert!(covenant::status(&treaty) == 2); // VIOLATED
         assert!(covenant::violation_count(&treaty) == 3);
+
+        // Check registry stats
+        let (signed, _, violated, _) = treaty_registry::alliance_stats(&registry, LEADER_A);
+        assert!(signed == 1);
+        assert!(violated == 3); // 3 violations by A
+
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
         scenario.return_to_sender(oracle);
     };
     scenario.next_tx(LEADER_B);
@@ -414,97 +390,95 @@ fun test_report_violation_b_attacks_a() {
     let mut scenario = setup_scenario();
     create_active_treaty(&mut scenario);
 
-    // B attacks A: graduated penalty, treaty stays ACTIVE after 1st
     scenario.next_tx(DEPLOYER);
     {
         let oracle = scenario.take_from_sender<OracleCap>();
         let mut treaty = scenario.take_shared<Treaty>();
+        let mut registry = scenario.take_shared<TreatyRegistry>();
         let clock = create_clock(5000, scenario.ctx());
         covenant::report_violation(
-            &oracle, &mut treaty,
-            2002, 1003, 99,
-            &clock, scenario.ctx(),
+            &oracle, &mut treaty, &mut registry,
+            2002, 1003, 99, &clock, scenario.ctx(),
         );
-        assert!(covenant::status(&treaty) == 1); // ACTIVE (graduated)
+        assert!(covenant::status(&treaty) == 1); // ACTIVE
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
         scenario.return_to_sender(oracle);
     };
 
-    // Victim leader (A) should receive ViolationRecord
     scenario.next_tx(LEADER_A);
-    {
-        let record = scenario.take_from_sender<ViolationRecord>();
-        scenario.return_to_sender(record);
-    };
+    { let r = scenario.take_from_sender<ViolationRecord>(); scenario.return_to_sender(r); };
 
     scenario.end();
 }
 
 #[test]
-#[expected_failure(abort_code = 11)] // ESameAlliance
+#[expected_failure(abort_code = 11)]
 fun test_report_violation_same_alliance() {
     let mut scenario = setup_scenario();
     create_active_treaty(&mut scenario);
-
     scenario.next_tx(DEPLOYER);
     {
         let oracle = scenario.take_from_sender<OracleCap>();
         let mut treaty = scenario.take_shared<Treaty>();
+        let mut registry = scenario.take_shared<TreatyRegistry>();
         let clock = create_clock(5000, scenario.ctx());
-        // 1001 and 1002 are both in Alliance A
         covenant::report_violation(
-            &oracle, &mut treaty, 1001, 1002, 50, &clock, scenario.ctx(),
+            &oracle, &mut treaty, &mut registry,
+            1001, 1002, 50, &clock, scenario.ctx(),
         );
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
         scenario.return_to_sender(oracle);
     };
-
     scenario.end();
 }
 
 #[test]
-#[expected_failure(abort_code = 9)] // EAttackerNotMember
+#[expected_failure(abort_code = 9)]
 fun test_report_violation_unknown_attacker() {
     let mut scenario = setup_scenario();
     create_active_treaty(&mut scenario);
-
     scenario.next_tx(DEPLOYER);
     {
         let oracle = scenario.take_from_sender<OracleCap>();
         let mut treaty = scenario.take_shared<Treaty>();
+        let mut registry = scenario.take_shared<TreatyRegistry>();
         let clock = create_clock(5000, scenario.ctx());
         covenant::report_violation(
-            &oracle, &mut treaty, 9999, 2001, 50, &clock, scenario.ctx(),
+            &oracle, &mut treaty, &mut registry,
+            9999, 2001, 50, &clock, scenario.ctx(),
         );
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
         scenario.return_to_sender(oracle);
     };
-
     scenario.end();
 }
 
 #[test]
-#[expected_failure(abort_code = 10)] // EVictimNotMember
+#[expected_failure(abort_code = 10)]
 fun test_report_violation_unknown_victim() {
     let mut scenario = setup_scenario();
     create_active_treaty(&mut scenario);
-
     scenario.next_tx(DEPLOYER);
     {
         let oracle = scenario.take_from_sender<OracleCap>();
         let mut treaty = scenario.take_shared<Treaty>();
+        let mut registry = scenario.take_shared<TreatyRegistry>();
         let clock = create_clock(5000, scenario.ctx());
         covenant::report_violation(
-            &oracle, &mut treaty, 1001, 9999, 50, &clock, scenario.ctx(),
+            &oracle, &mut treaty, &mut registry,
+            1001, 9999, 50, &clock, scenario.ctx(),
         );
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
         scenario.return_to_sender(oracle);
     };
-
     scenario.end();
 }
 
@@ -513,27 +487,26 @@ fun test_report_violation_unknown_victim() {
 // ============================================================
 
 #[test]
-#[expected_failure(abort_code = 6)] // ETreatyExpired
+#[expected_failure(abort_code = 6)]
 fun test_violation_at_exact_expiry_fails() {
     let mut scenario = setup_scenario();
     create_active_ceasefire(&mut scenario, ONE_DAY_MS);
-
-    // The ceasefire expires at effective_at_ms + duration = 2000 + 86400000
     let expiry_ms = 2000 + ONE_DAY_MS;
-
     scenario.next_tx(DEPLOYER);
     {
         let oracle = scenario.take_from_sender<OracleCap>();
         let mut treaty = scenario.take_shared<Treaty>();
-        let clock = create_clock(expiry_ms, scenario.ctx()); // exactly at expiry
+        let mut registry = scenario.take_shared<TreatyRegistry>();
+        let clock = create_clock(expiry_ms, scenario.ctx());
         covenant::report_violation(
-            &oracle, &mut treaty, 1001, 2001, 50, &clock, scenario.ctx(),
+            &oracle, &mut treaty, &mut registry,
+            1001, 2001, 50, &clock, scenario.ctx(),
         );
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
         scenario.return_to_sender(oracle);
     };
-
     scenario.end();
 }
 
@@ -541,23 +514,23 @@ fun test_violation_at_exact_expiry_fails() {
 fun test_violation_just_before_expiry_succeeds() {
     let mut scenario = setup_scenario();
     create_active_ceasefire(&mut scenario, ONE_DAY_MS);
-
     let expiry_ms = 2000 + ONE_DAY_MS;
-
     scenario.next_tx(DEPLOYER);
     {
         let oracle = scenario.take_from_sender<OracleCap>();
         let mut treaty = scenario.take_shared<Treaty>();
-        let clock = create_clock(expiry_ms - 1, scenario.ctx()); // 1ms before expiry
+        let mut registry = scenario.take_shared<TreatyRegistry>();
+        let clock = create_clock(expiry_ms - 1, scenario.ctx());
         covenant::report_violation(
-            &oracle, &mut treaty, 1001, 2001, 50, &clock, scenario.ctx(),
+            &oracle, &mut treaty, &mut registry,
+            1001, 2001, 50, &clock, scenario.ctx(),
         );
-        assert!(covenant::status(&treaty) == 1); // ACTIVE (graduated: 1st violation)
+        assert!(covenant::status(&treaty) == 1); // graduated: 1st violation
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
         scenario.return_to_sender(oracle);
     };
-
     scenario.end();
 }
 
@@ -569,55 +542,61 @@ fun test_violation_just_before_expiry_succeeds() {
 fun test_complete_expired_treaty() {
     let mut scenario = setup_scenario();
     create_active_ceasefire(&mut scenario, ONE_DAY_MS);
-
     let expiry_ms = 2000 + ONE_DAY_MS;
-
     scenario.next_tx(LEADER_A);
     {
         let mut treaty = scenario.take_shared<Treaty>();
+        let mut registry = scenario.take_shared<TreatyRegistry>();
         let clock = create_clock(expiry_ms + 1, scenario.ctx());
-        covenant::complete_treaty(&mut treaty, &clock, scenario.ctx());
+        covenant::complete_treaty(&mut treaty, &mut registry, &clock, scenario.ctx());
         assert!(covenant::status(&treaty) == 3); // COMPLETED
+
+        // Both alliances should have 1 honored treaty
+        let rate_a = treaty_registry::alliance_honor_rate(&registry, LEADER_A);
+        let rate_b = treaty_registry::alliance_honor_rate(&registry, LEADER_B);
+        assert!(rate_a == 10000); // 1/1 = 100%
+        assert!(rate_b == 10000);
+
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
     };
-
     scenario.end();
 }
 
 #[test]
-#[expected_failure(abort_code = 7)] // ETreatyNotExpired
+#[expected_failure(abort_code = 7)]
 fun test_complete_before_expiry_fails() {
     let mut scenario = setup_scenario();
     create_active_ceasefire(&mut scenario, ONE_DAY_MS);
-
     scenario.next_tx(LEADER_A);
     {
         let mut treaty = scenario.take_shared<Treaty>();
-        let clock = create_clock(3000, scenario.ctx()); // way before expiry
-        covenant::complete_treaty(&mut treaty, &clock, scenario.ctx());
+        let mut registry = scenario.take_shared<TreatyRegistry>();
+        let clock = create_clock(3000, scenario.ctx());
+        covenant::complete_treaty(&mut treaty, &mut registry, &clock, scenario.ctx());
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
     };
-
     scenario.end();
 }
 
 #[test]
-#[expected_failure(abort_code = 7)] // ETreatyNotExpired — NAP has no expiry
+#[expected_failure(abort_code = 7)]
 fun test_complete_nap_fails() {
     let mut scenario = setup_scenario();
-    create_active_treaty(&mut scenario); // NAP, no expiry
-
+    create_active_treaty(&mut scenario);
     scenario.next_tx(LEADER_A);
     {
         let mut treaty = scenario.take_shared<Treaty>();
+        let mut registry = scenario.take_shared<TreatyRegistry>();
         let clock = create_clock(999_999_999_999, scenario.ctx());
-        covenant::complete_treaty(&mut treaty, &clock, scenario.ctx());
+        covenant::complete_treaty(&mut treaty, &mut registry, &clock, scenario.ctx());
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
+        ts::return_shared(registry);
     };
-
     scenario.end();
 }
 
@@ -628,7 +607,6 @@ fun test_complete_nap_fails() {
 #[test]
 fun test_cancel_by_party_a() {
     let mut scenario = setup_scenario();
-
     scenario.next_tx(LEADER_A);
     {
         let clock = create_clock(1000, scenario.ctx());
@@ -640,22 +618,19 @@ fun test_cancel_by_party_a() {
         );
         clock::destroy_for_testing(clock);
     };
-
     scenario.next_tx(LEADER_A);
     {
         let mut treaty = scenario.take_shared<Treaty>();
         covenant::cancel_treaty(&mut treaty, scenario.ctx());
-        assert!(covenant::status(&treaty) == 4); // CANCELLED
+        assert!(covenant::status(&treaty) == 4);
         ts::return_shared(treaty);
     };
-
     scenario.end();
 }
 
 #[test]
 fun test_cancel_by_party_b() {
     let mut scenario = setup_scenario();
-
     scenario.next_tx(LEADER_A);
     {
         let clock = create_clock(1000, scenario.ctx());
@@ -667,24 +642,20 @@ fun test_cancel_by_party_b() {
         );
         clock::destroy_for_testing(clock);
     };
-
-    // B can also cancel pending treaties
     scenario.next_tx(LEADER_B);
     {
         let mut treaty = scenario.take_shared<Treaty>();
         covenant::cancel_treaty(&mut treaty, scenario.ctx());
-        assert!(covenant::status(&treaty) == 4); // CANCELLED
+        assert!(covenant::status(&treaty) == 4);
         ts::return_shared(treaty);
     };
-
     scenario.end();
 }
 
 #[test]
-#[expected_failure(abort_code = 2)] // ENotParty
+#[expected_failure(abort_code = 2)]
 fun test_cancel_by_stranger_fails() {
     let mut scenario = setup_scenario();
-
     scenario.next_tx(LEADER_A);
     {
         let clock = create_clock(1000, scenario.ctx());
@@ -696,31 +667,26 @@ fun test_cancel_by_stranger_fails() {
         );
         clock::destroy_for_testing(clock);
     };
-
-    // Stranger cannot cancel
     scenario.next_tx(@0xBAD);
     {
         let mut treaty = scenario.take_shared<Treaty>();
         covenant::cancel_treaty(&mut treaty, scenario.ctx());
         ts::return_shared(treaty);
     };
-
     scenario.end();
 }
 
 #[test]
-#[expected_failure(abort_code = 4)] // ETreatyNotPending
+#[expected_failure(abort_code = 4)]
 fun test_cancel_active_treaty_fails() {
     let mut scenario = setup_scenario();
     create_active_treaty(&mut scenario);
-
     scenario.next_tx(LEADER_A);
     {
         let mut treaty = scenario.take_shared<Treaty>();
         covenant::cancel_treaty(&mut treaty, scenario.ctx());
         ts::return_shared(treaty);
     };
-
     scenario.end();
 }
 
@@ -732,42 +698,23 @@ fun test_cancel_active_treaty_fails() {
 fun test_verify_violation_cross_alliance() {
     let mut scenario = setup_scenario();
     create_active_treaty(&mut scenario);
-
     scenario.next_tx(DEPLOYER);
     {
         let treaty = scenario.take_shared<Treaty>();
         let clock = create_clock(5000, scenario.ctx());
-
-        // A attacks B — violation, violator is A leader
-        let (is_violation, violator) = covenant::verify_violation(
-            &treaty, 1001, 2001, &clock
-        );
-        assert!(is_violation);
-        assert!(violator == LEADER_A);
-
-        // B attacks A — violation, violator is B leader
-        let (is_violation2, violator2) = covenant::verify_violation(
-            &treaty, 2002, 1003, &clock
-        );
-        assert!(is_violation2);
-        assert!(violator2 == LEADER_B);
-
-        // Same alliance — not a violation
-        let (is_violation3, _) = covenant::verify_violation(
-            &treaty, 1001, 1002, &clock
-        );
-        assert!(!is_violation3);
-
-        // Unknown attacker — not a violation
-        let (is_violation4, _) = covenant::verify_violation(
-            &treaty, 9999, 2001, &clock
-        );
-        assert!(!is_violation4);
-
+        let (v1, a1) = covenant::verify_violation(&treaty, 1001, 2001, &clock);
+        assert!(v1);
+        assert!(a1 == LEADER_A);
+        let (v2, a2) = covenant::verify_violation(&treaty, 2002, 1003, &clock);
+        assert!(v2);
+        assert!(a2 == LEADER_B);
+        let (v3, _) = covenant::verify_violation(&treaty, 1001, 1002, &clock);
+        assert!(!v3);
+        let (v4, _) = covenant::verify_violation(&treaty, 9999, 2001, &clock);
+        assert!(!v4);
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
     };
-
     scenario.end();
 }
 
@@ -775,24 +722,16 @@ fun test_verify_violation_cross_alliance() {
 fun test_verify_violation_expired_treaty() {
     let mut scenario = setup_scenario();
     create_active_ceasefire(&mut scenario, ONE_DAY_MS);
-
     let expiry_ms = 2000 + ONE_DAY_MS;
-
     scenario.next_tx(DEPLOYER);
     {
         let treaty = scenario.take_shared<Treaty>();
         let clock = create_clock(expiry_ms + 1, scenario.ctx());
-
-        // Expired treaty — verify_violation should return false
-        let (is_violation, _) = covenant::verify_violation(
-            &treaty, 1001, 2001, &clock
-        );
-        assert!(!is_violation);
-
+        let (v, _) = covenant::verify_violation(&treaty, 1001, 2001, &clock);
+        assert!(!v);
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
     };
-
     scenario.end();
 }
 
@@ -803,8 +742,6 @@ fun test_verify_violation_expired_treaty() {
 #[test]
 fun test_deposit_change_returned() {
     let mut scenario = setup_scenario();
-
-    // Create with 2 SUI but only 0.5 SUI required — should get 1.5 SUI change
     scenario.next_tx(LEADER_A);
     {
         let clock = create_clock(1000, scenario.ctx());
@@ -816,13 +753,43 @@ fun test_deposit_change_returned() {
         );
         clock::destroy_for_testing(clock);
     };
-
-    // Leader A should have received change coin
     scenario.next_tx(LEADER_A);
     {
         let change = scenario.take_from_sender<Coin<SUI>>();
-        assert!(coin::value(&change) == 2 * ONE_SUI - DEPOSIT); // 1.5 SUI
+        assert!(coin::value(&change) == 2 * ONE_SUI - DEPOSIT);
         scenario.return_to_sender(change);
+    };
+    scenario.end();
+}
+
+// ============================================================
+// Treaty Registry
+// ============================================================
+
+#[test]
+fun test_registry_honor_rate() {
+    let mut scenario = setup_scenario();
+
+    // Create and complete a ceasefire (honored by both)
+    create_active_ceasefire(&mut scenario, ONE_DAY_MS);
+    let expiry_ms = 2000 + ONE_DAY_MS;
+    scenario.next_tx(LEADER_A);
+    {
+        let mut treaty = scenario.take_shared<Treaty>();
+        let mut registry = scenario.take_shared<TreatyRegistry>();
+        let clock = create_clock(expiry_ms + 1, scenario.ctx());
+        covenant::complete_treaty(&mut treaty, &mut registry, &clock, scenario.ctx());
+
+        let rate_a = treaty_registry::alliance_honor_rate(&registry, LEADER_A);
+        assert!(rate_a == 10000); // 100%
+
+        // Unknown alliance should return 10000 (benefit of the doubt)
+        let rate_unknown = treaty_registry::alliance_honor_rate(&registry, @0xFFFF);
+        assert!(rate_unknown == 10000);
+
+        clock::destroy_for_testing(clock);
+        ts::return_shared(treaty);
+        ts::return_shared(registry);
     };
 
     scenario.end();
