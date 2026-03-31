@@ -318,15 +318,7 @@ body::after {
 }
 
 .hero-logo {
-  width: 120px;
-  height: 120px;
-  margin-bottom: 40px;
-  filter: drop-shadow(0 0 30px rgba(184, 148, 62, 0.3));
-  animation: logoBreathe 4s ease-in-out infinite;
-}
-@keyframes logoBreathe {
-  0%, 100% { filter: drop-shadow(0 0 20px rgba(184, 148, 62, 0.2)); }
-  50% { filter: drop-shadow(0 0 40px rgba(184, 148, 62, 0.4)); }
+  margin-bottom: 24px;
 }
 
 .hero-title {

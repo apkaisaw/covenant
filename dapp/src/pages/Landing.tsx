@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import Particles, { initParticlesEngine } from "@tsparticles/react";
 import { loadSlim } from "@tsparticles/slim";
 import { PACKAGE_ID } from "../lib/constants";
+import { CovenantLogo } from "../components/CovenantLogo";
 
 export function Landing() {
   const [ready, setReady] = useState(false);
@@ -37,7 +38,9 @@ export function Landing() {
 
       {/* Hero */}
       <section className="hero">
-        <img src="/logo.png" alt="Covenant" className="hero-logo" />
+        <div className="hero-logo">
+          <CovenantLogo size={240} />
+        </div>
         <h1 className="hero-title">BREAK THE PACT,<br />LOSE YOUR STAKE</h1>
         <p className="hero-subtitle">Self-executing diplomatic treaties for EVE Frontier</p>
         <div className="hero-actions">
