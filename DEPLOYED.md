@@ -58,6 +58,19 @@
 | `TreatyCompleted` | Treaty expired normally, deposits returned |
 | `TreatyCancelled` | Pending treaty cancelled by either party |
 
+## E2E Test Treaty
+
+| Field | Value |
+|-------|-------|
+| Treaty Object | `0x7ff3ab71ba0c112a0cf04584c31284477161d198632650f6a520415f0bee8b7b` |
+| Alliance A Leader | `0xc8ac...8bfd` (covenant) |
+| Alliance B Leader | `0x7832...dd22` (augury) |
+| Members A | `[1001, 1002, 1003]` |
+| Members B | `[2001, 2002, 2003]` |
+| Deposit | 0.1 SUI each |
+| Status | ACTIVE |
+| Indexer Test | Passed (13 KillMails polled, treaty loaded with 3+3 members) |
+
 ## Gas Cost
 
 - v1 deployment: ~0.037 SUI
