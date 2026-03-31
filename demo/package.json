@@ -1,0 +1,19 @@
+{
+  "name": "covenant-demo",
+  "version": "1.0.0",
+  "description": "Covenant treaty lifecycle demo with ASCII terminal visuals",
+  "type": "module",
+  "scripts": {
+    "demo": "tsx demo.ts",
+    "demo:dry": "tsx demo.ts --dry-run"
+  },
+  "dependencies": {
+    "@mysten/sui": "^1.25.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
