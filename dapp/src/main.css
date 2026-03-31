@@ -1,70 +1,210 @@
-/* Design tokens */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
 :root {
-  --color-background: #0B0B0B;
-  --color-text: #FAFAE5;
-  --color-text-muted: rgba(250, 250, 229, 0.9);
-  --color-border: rgba(250, 250, 229, 0.5);
-  --color-button-background: rgba(250, 250, 229, 0.1);
-
+  --color-bone: #e8dcc8;
+  --color-bone-muted: rgba(232, 220, 200, 0.5);
+  --color-gold: #b8943e;
+  --color-gold-dim: rgba(184, 148, 62, 0.3);
+  --color-orange: #e85d26;
+  --color-rust: #8b2500;
+  --color-bg: #1a1209;
+  --color-bg-card: #221a0e;
+  --color-border: rgba(184, 148, 62, 0.3);
+  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+  --glow-gold: 0 0 20px rgba(184, 148, 62, 0.15);
+  --glow-orange: 0 0 20px rgba(232, 93, 38, 0.2);
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: "Favorit", "ABC Favorit Mono", monospace;
-  font-weight: 300;
-  font-size: 16px;
-  line-height: 150%;
-  letter-spacing: -0.02em;
-  color: var(--color-text);
-  background-color: var(--color-background);
-  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-bone);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  min-height: 100vh;
 }
 
-/* Header (e.g. Wallet Status) */
-h1, h2, h3, h4, h5, h6 {
-  font-family: "Frontier Disket Mono", "Fronter Disket Mono", monospace;
-  font-weight: 400; /* Regular */
-  color: var(--color-text);
-  line-height: 120%;
+/* CRT scanline overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.08) 2px,
+    rgba(0, 0, 0, 0.08) 4px
+  );
 }
 
-h3 {
-  font-size: 2rem;
+#root {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 20px;
 }
 
-/* Body text inheritance for containers */
-p, span, label, .body-text {
-  font-family: "Favorit", "ABC Favorit Mono", "Favorit Mono", monospace;
-  font-weight: 300;
-  font-size: 1rem;
-  margin: 0 0 8px 0;
-  letter-spacing: -0.02em;
-  color: var(--color-text);
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 32px;
+  flex-wrap: wrap;
+  gap: 12px;
 }
-
-/* Dotted / subtle borders (Punktalína) */
-.border-subtle {
+.app-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-gold);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+}
+.app-nav { display: flex; gap: 4px; }
+.nav-link {
+  padding: 6px 14px;
+  color: var(--color-bone-muted);
+  text-decoration: none;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+.nav-link:hover, .nav-link.active {
+  color: var(--color-gold);
   border-color: var(--color-border);
 }
-
-button {
-  font-family: "Frontier Disket Mono", monospace;
-  font-weight: 300;
-  font-size: 16px;
-  line-height: 150%;
-  letter-spacing: -0.02em;
-  background-color: var(--color-button-background);
-  border: none;
-  padding: 10px 20px;
-  border-radius: 5px;
+.wallet-btn {
+  background: transparent;
+  border: 1px solid var(--color-gold);
+  color: var(--color-gold);
+  padding: 6px 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 0;
+}
+.wallet-btn:hover {
+  background: var(--color-gold-dim);
+  box-shadow: var(--glow-gold);
 }
 
-.divider {
-  margin-top: 20px;
-  margin-bottom: 20px;
-  border-bottom: 1px solid var(--color-border);
-  height: 1px;
+/* Cards */
+.card {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: var(--glow-gold);
+  transition: box-shadow 0.3s;
 }
+.card:hover { box-shadow: 0 0 30px rgba(184, 148, 62, 0.2); }
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-gold);
+  letter-spacing: 1px;
+}
+
+/* Status badges */
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  border: 1px solid;
+}
+.badge-active { color: var(--color-gold); border-color: var(--color-gold); box-shadow: var(--glow-gold); }
+.badge-pending { color: var(--color-rust); border-color: var(--color-rust); animation: pulse 2s ease-in-out infinite; }
+.badge-violated { color: var(--color-orange); border-color: var(--color-orange); box-shadow: var(--glow-orange); animation: pulse 1.5s ease-in-out infinite; }
+.badge-completed, .badge-cancelled { color: var(--color-bone-muted); border-color: rgba(232, 220, 200, 0.2); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+/* Strike indicators */
+.strikes { display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--color-bone-muted); }
+.strike-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 1px solid var(--color-border); background: transparent;
+}
+.strike-dot.filled {
+  background: var(--color-orange); border-color: var(--color-orange);
+  box-shadow: 0 0 8px rgba(232, 93, 38, 0.5);
+}
+
+/* Forms */
+.form-group { margin-bottom: 16px; }
+.form-label {
+  display: block; font-size: 10px; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--color-bone-muted); margin-bottom: 6px;
+}
+.form-input, .form-select, .form-textarea {
+  width: 100%; background: var(--color-bg); border: 1px solid var(--color-border);
+  color: var(--color-bone); padding: 10px 12px; font-family: var(--font-mono);
+  font-size: 13px; outline: none; transition: border-color 0.2s; border-radius: 0;
+}
+.form-input:focus, .form-textarea:focus { border-color: var(--color-gold); box-shadow: var(--glow-gold); }
+.form-textarea { resize: vertical; min-height: 80px; }
+
+.btn-primary {
+  background: var(--color-gold-dim); border: 1px solid var(--color-gold);
+  color: var(--color-gold); padding: 10px 24px; font-family: var(--font-mono);
+  font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+  cursor: pointer; transition: all 0.2s; border-radius: 0;
+}
+.btn-primary:hover { background: rgba(184, 148, 62, 0.4); box-shadow: var(--glow-gold); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-danger {
+  background: rgba(139, 37, 0, 0.2); border: 1px solid var(--color-rust);
+  color: var(--color-rust); padding: 10px 24px; font-family: var(--font-mono);
+  font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+  cursor: pointer; border-radius: 0;
+}
+
+/* Meta info rows */
+.meta-row {
+  display: flex; justify-content: space-between; padding: 6px 0;
+  border-bottom: 1px dotted rgba(184, 148, 62, 0.15); font-size: 12px;
+}
+.meta-label { color: var(--color-bone-muted); }
+.meta-value { color: var(--color-bone); text-align: right; max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
+.addr { font-size: 11px; color: var(--color-gold); opacity: 0.8; }
+
+/* Page headers */
+.page-title {
+  font-size: 16px; font-weight: 700; color: var(--color-gold);
+  letter-spacing: 3px; text-transform: uppercase; margin-bottom: 24px;
+  padding-bottom: 12px; border-bottom: 1px solid var(--color-border);
+}
+.empty-state {
+  text-align: center; padding: 60px 20px; color: var(--color-bone-muted);
+  font-size: 12px; letter-spacing: 1px;
+}
+
+/* Reputation */
+.honor-rate {
+  font-size: 36px; font-weight: 700; color: var(--color-gold);
+  text-shadow: 0 0 20px rgba(184, 148, 62, 0.3);
+}
+.stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 16px; }
+.stat-box { background: var(--color-bg); border: 1px solid var(--color-border); padding: 16px; text-align: center; }
+.stat-number { font-size: 24px; font-weight: 700; color: var(--color-bone); }
+.stat-label { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--color-bone-muted); margin-top: 4px; }
+
+.treaty-link { text-decoration: none; color: inherit; display: block; }
+.actions { display: flex; gap: 12px; margin-top: 20px; }

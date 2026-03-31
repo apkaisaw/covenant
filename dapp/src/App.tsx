@@ -1,46 +1,36 @@
-import { Box, Container, Flex, Heading } from "@radix-ui/themes";
-import { WalletStatus } from "./WalletStatus";
+import { HashRouter, Routes, Route, NavLink } from "react-router-dom";
 import { abbreviateAddress, useConnection } from "@evefrontier/dapp-kit";
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
+import { Treaties } from "./pages/Treaties";
+import { TreatyDetail } from "./pages/TreatyDetail";
+import { Propose } from "./pages/Propose";
+import { Reputation } from "./pages/Reputation";
 
 function App() {
-  /**
-   * STEP 2 — Wallet connection
-   *
-   * useConnection() (@evefrontier/dapp-kit) → handleConnect, handleDisconnect;
-   * isConnected, walletAddress, hasEveVault. useCurrentAccount()
-   * (@mysten/dapp-kit-react) → account (e.g. account.address) for UI. abbreviateAddress()
-   * (@evefrontier/dapp-kit) for display.
-   */
   const { handleConnect, handleDisconnect } = useConnection();
   const account = useCurrentAccount();
 
   return (
-    <Box style={{ padding: "20px" }}>
-      <Flex
-        position="sticky"
-        px="4"
-        py="2"
-        direction="row"
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-        }}
-      >
-        <Heading>EVE Frontier dApp Starter Template</Heading>
-
-        {/* STEP 2 — Connect/disconnect; show abbreviated address in header. */}
-        <button
-          onClick={() =>
-            account?.address ? handleDisconnect() : handleConnect()
-          }
-        >
-          {account ? abbreviateAddress(account?.address) : "Connect Wallet"}
+    <HashRouter>
+      <header className="app-header">
+        <span className="app-title">Covenant</span>
+        <nav className="app-nav">
+          <NavLink to="/" end className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>Treaties</NavLink>
+          <NavLink to="/propose" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>Propose</NavLink>
+          <NavLink to="/reputation" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>Reputation</NavLink>
+        </nav>
+        <button className="wallet-btn" onClick={() => account?.address ? handleDisconnect() : handleConnect()}>
+          {account ? abbreviateAddress(account.address) : "CONNECT WALLET"}
         </button>
-      </Flex>
-      {/* STEP 3 — Same hooks (useConnection, useCurrentAccount) drive WalletStatus; state stays in sync. */}
-      <WalletStatus />
-    </Box>
+      </header>
+
+      <Routes>
+        <Route path="/" element={<Treaties />} />
+        <Route path="/treaty/:id" element={<TreatyDetail />} />
+        <Route path="/propose" element={<Propose />} />
+        <Route path="/reputation" element={<Reputation />} />
+      </Routes>
+    </HashRouter>
   );
 }
 
