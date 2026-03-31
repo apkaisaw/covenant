@@ -168,6 +168,24 @@ sui client call \
          0x6                           # Clock
 ```
 
+## KillMail Monitor (Off-chain Indexer)
+
+The `indexer/` directory contains a TypeScript service that completes the enforcement loop:
+
+1. Polls `KillmailCreatedEvent` from Sui GraphQL (30s interval, cursor-based pagination)
+2. Reads all ACTIVE treaties and their member tables from chain
+3. Matches each killmail's attacker/victim against treaty member lists
+4. Submits `report_violation()` transactions when a cross-alliance kill is detected
+
+```bash
+cd indexer && npm install
+cp .env.example .env   # fill in ORACLE_PRIVATE_KEY and WORLD_PACKAGE_ID
+npx tsx monitor.ts             # live mode
+npx tsx monitor.ts --dry-run   # log matches without submitting transactions
+```
+
+This is the same off-chain indexer to on-chain enforcement pattern used by Aegis Stack (S-tier).
+
 ## Tests
 
 23 unit tests covering the full treaty lifecycle:

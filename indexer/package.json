@@ -1,0 +1,19 @@
+{
+  "name": "covenant-indexer",
+  "version": "1.0.0",
+  "description": "KillMail monitor and auto-violation reporter for Covenant treaties",
+  "type": "module",
+  "scripts": {
+    "monitor": "tsx monitor.ts",
+    "dry-run": "tsx monitor.ts --dry-run"
+  },
+  "dependencies": {
+    "@mysten/sui": "^1.25.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
