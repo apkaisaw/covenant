@@ -314,11 +314,11 @@ fun create_active_ceasefire(scenario: &mut Scenario, duration_ms: u64) {
 }
 
 #[test]
-fun test_report_violation_a_attacks_b() {
+fun test_report_violation_a_attacks_b_graduated() {
     let mut scenario = setup_scenario();
     create_active_treaty(&mut scenario);
 
-    // Oracle reports: member 1001 (A) killed member 2001 (B)
+    // 1st violation: 20% penalty, treaty stays ACTIVE
     scenario.next_tx(DEPLOYER);
     {
         let oracle = scenario.take_from_sender<OracleCap>();
@@ -326,19 +326,17 @@ fun test_report_violation_a_attacks_b() {
         let clock = create_clock(5000, scenario.ctx());
         covenant::report_violation(
             &oracle, &mut treaty,
-            1001, // attacker from A
-            2001, // victim from B
-            42,   // killmail_id
+            1001, 2001, 42,
             &clock, scenario.ctx(),
         );
-        assert!(covenant::status(&treaty) == 2); // VIOLATED
+        assert!(covenant::status(&treaty) == 1); // still ACTIVE
         assert!(covenant::violation_count(&treaty) == 1);
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
         scenario.return_to_sender(oracle);
     };
 
-    // Victim leader (B) should receive ViolationRecord
+    // B receives ViolationRecord
     scenario.next_tx(LEADER_B);
     {
         let record = scenario.take_from_sender<ViolationRecord>();
@@ -349,11 +347,74 @@ fun test_report_violation_a_attacks_b() {
 }
 
 #[test]
+fun test_graduated_penalty_escalation() {
+    let mut scenario = setup_scenario();
+    create_active_treaty(&mut scenario);
+
+    // 1st violation: 20% of deposit (0.5 SUI * 20% = 0.1 SUI)
+    scenario.next_tx(DEPLOYER);
+    {
+        let oracle = scenario.take_from_sender<OracleCap>();
+        let mut treaty = scenario.take_shared<Treaty>();
+        let clock = create_clock(5000, scenario.ctx());
+        covenant::report_violation(
+            &oracle, &mut treaty, 1001, 2001, 1, &clock, scenario.ctx(),
+        );
+        assert!(covenant::status(&treaty) == 1); // ACTIVE
+        assert!(covenant::violation_count(&treaty) == 1);
+        clock::destroy_for_testing(clock);
+        ts::return_shared(treaty);
+        scenario.return_to_sender(oracle);
+    };
+    // Collect ViolationRecord
+    scenario.next_tx(LEADER_B);
+    { let r = scenario.take_from_sender<ViolationRecord>(); scenario.return_to_sender(r); };
+
+    // 2nd violation: 40% of deposit (0.5 SUI * 40% = 0.2 SUI)
+    scenario.next_tx(DEPLOYER);
+    {
+        let oracle = scenario.take_from_sender<OracleCap>();
+        let mut treaty = scenario.take_shared<Treaty>();
+        let clock = create_clock(6000, scenario.ctx());
+        covenant::report_violation(
+            &oracle, &mut treaty, 1002, 2002, 2, &clock, scenario.ctx(),
+        );
+        assert!(covenant::status(&treaty) == 1); // still ACTIVE
+        assert!(covenant::violation_count(&treaty) == 2);
+        clock::destroy_for_testing(clock);
+        ts::return_shared(treaty);
+        scenario.return_to_sender(oracle);
+    };
+    scenario.next_tx(LEADER_B);
+    { let r = scenario.take_from_sender<ViolationRecord>(); scenario.return_to_sender(r); };
+
+    // 3rd violation: 100% remaining, treaty TERMINATED
+    scenario.next_tx(DEPLOYER);
+    {
+        let oracle = scenario.take_from_sender<OracleCap>();
+        let mut treaty = scenario.take_shared<Treaty>();
+        let clock = create_clock(7000, scenario.ctx());
+        covenant::report_violation(
+            &oracle, &mut treaty, 1003, 2003, 3, &clock, scenario.ctx(),
+        );
+        assert!(covenant::status(&treaty) == 2); // VIOLATED (terminated)
+        assert!(covenant::violation_count(&treaty) == 3);
+        clock::destroy_for_testing(clock);
+        ts::return_shared(treaty);
+        scenario.return_to_sender(oracle);
+    };
+    scenario.next_tx(LEADER_B);
+    { let r = scenario.take_from_sender<ViolationRecord>(); scenario.return_to_sender(r); };
+
+    scenario.end();
+}
+
+#[test]
 fun test_report_violation_b_attacks_a() {
     let mut scenario = setup_scenario();
     create_active_treaty(&mut scenario);
 
-    // Oracle reports: member 2002 (B) killed member 1003 (A)
+    // B attacks A: graduated penalty, treaty stays ACTIVE after 1st
     scenario.next_tx(DEPLOYER);
     {
         let oracle = scenario.take_from_sender<OracleCap>();
@@ -361,12 +422,10 @@ fun test_report_violation_b_attacks_a() {
         let clock = create_clock(5000, scenario.ctx());
         covenant::report_violation(
             &oracle, &mut treaty,
-            2002, // attacker from B
-            1003, // victim from A
-            99,
+            2002, 1003, 99,
             &clock, scenario.ctx(),
         );
-        assert!(covenant::status(&treaty) == 2); // VIOLATED
+        assert!(covenant::status(&treaty) == 1); // ACTIVE (graduated)
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
         scenario.return_to_sender(oracle);
@@ -493,7 +552,7 @@ fun test_violation_just_before_expiry_succeeds() {
         covenant::report_violation(
             &oracle, &mut treaty, 1001, 2001, 50, &clock, scenario.ctx(),
         );
-        assert!(covenant::status(&treaty) == 2); // VIOLATED
+        assert!(covenant::status(&treaty) == 1); // ACTIVE (graduated: 1st violation)
         clock::destroy_for_testing(clock);
         ts::return_shared(treaty);
         scenario.return_to_sender(oracle);

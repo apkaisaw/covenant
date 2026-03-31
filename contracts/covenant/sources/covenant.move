@@ -33,6 +33,13 @@ const STATUS_CANCELLED: u8 = 4;   // Cancelled before activation
 // Minimum deposit: 0.1 SUI (100_000_000 MIST)
 const MIN_DEPOSIT: u64 = 100_000_000;
 
+// Graduated penalty tiers (percentage of deposit forfeited per violation)
+// 1st violation: 20%, 2nd: 40%, 3rd+: 100% (treaty terminated)
+const PENALTY_TIER_1_PCT: u64 = 20;
+const PENALTY_TIER_2_PCT: u64 = 40;
+const PENALTY_TIER_3_PCT: u64 = 100;
+const MAX_VIOLATIONS_BEFORE_TERMINATION: u64 = 3;
+
 // === Errors ===
 
 /// Sender is not the Alliance B leader
@@ -273,8 +280,9 @@ public fun sign_treaty(
 }
 
 /// Oracle reports a treaty violation based on KillMail evidence.
-/// The violating alliance's full deposit is transferred to the victim alliance leader.
-/// The treaty status becomes VIOLATED.
+/// Uses graduated penalty: 1st violation = 20%, 2nd = 40%, 3rd = 100% + treaty terminated.
+/// This models real diplomacy -- a single incident doesn't nuke the entire alliance relationship,
+/// but repeated aggression escalates to full forfeiture.
 public fun report_violation(
     _oracle: &OracleCap,
     treaty: &mut Treaty,
@@ -306,43 +314,72 @@ public fun report_violation(
         ESameAlliance,
     );
 
-    // Determine violating alliance and compensate victim
-    let (violating_leader, victim_leader, compensation) = if (attacker_in_a) {
-        // Alliance A violated: A's deposit goes to B's leader
-        let amount = balance::value(&treaty.alliance_a_deposit);
-        let payout = coin::from_balance(
-            balance::withdraw_all(&mut treaty.alliance_a_deposit), ctx
-        );
-        transfer::public_transfer(payout, treaty.alliance_b_leader);
-        // Return B's deposit to B
-        let b_amount = balance::value(&treaty.alliance_b_deposit);
-        if (b_amount > 0) {
-            let b_refund = coin::from_balance(
-                balance::withdraw_all(&mut treaty.alliance_b_deposit), ctx
-            );
-            transfer::public_transfer(b_refund, treaty.alliance_b_leader);
-        };
-        (treaty.alliance_a_leader, treaty.alliance_b_leader, amount)
+    treaty.violation_count = treaty.violation_count + 1;
+
+    // Graduated penalty: escalates with each violation
+    let penalty_pct = if (treaty.violation_count >= MAX_VIOLATIONS_BEFORE_TERMINATION) {
+        PENALTY_TIER_3_PCT
+    } else if (treaty.violation_count == 2) {
+        PENALTY_TIER_2_PCT
     } else {
-        // Alliance B violated: B's deposit goes to A's leader
-        let amount = balance::value(&treaty.alliance_b_deposit);
-        let payout = coin::from_balance(
-            balance::withdraw_all(&mut treaty.alliance_b_deposit), ctx
-        );
-        transfer::public_transfer(payout, treaty.alliance_a_leader);
-        // Return A's deposit to A
-        let a_amount = balance::value(&treaty.alliance_a_deposit);
-        if (a_amount > 0) {
-            let a_refund = coin::from_balance(
-                balance::withdraw_all(&mut treaty.alliance_a_deposit), ctx
-            );
-            transfer::public_transfer(a_refund, treaty.alliance_a_leader);
-        };
-        (treaty.alliance_b_leader, treaty.alliance_a_leader, amount)
+        PENALTY_TIER_1_PCT
     };
 
-    treaty.status = STATUS_VIOLATED;
-    treaty.violation_count = treaty.violation_count + 1;
+    let is_terminal = treaty.violation_count >= MAX_VIOLATIONS_BEFORE_TERMINATION;
+
+    // Calculate and transfer penalty from violator's deposit
+    let (violating_leader, victim_leader, compensation) = if (attacker_in_a) {
+        let deposit_total = balance::value(&treaty.alliance_a_deposit);
+        let penalty_amount = if (is_terminal) {
+            deposit_total
+        } else {
+            // Penalty based on original deposit, capped at remaining balance
+            let calculated = treaty.deposit_required * penalty_pct / 100;
+            if (calculated > deposit_total) { deposit_total } else { calculated }
+        };
+        if (penalty_amount > 0) {
+            let payout = coin::take(&mut treaty.alliance_a_deposit, penalty_amount, ctx);
+            transfer::public_transfer(payout, treaty.alliance_b_leader);
+        };
+        // On terminal violation, also return B's deposit
+        if (is_terminal) {
+            let b_remaining = balance::value(&treaty.alliance_b_deposit);
+            if (b_remaining > 0) {
+                let b_refund = coin::from_balance(
+                    balance::withdraw_all(&mut treaty.alliance_b_deposit), ctx
+                );
+                transfer::public_transfer(b_refund, treaty.alliance_b_leader);
+            };
+        };
+        (treaty.alliance_a_leader, treaty.alliance_b_leader, penalty_amount)
+    } else {
+        let deposit_total = balance::value(&treaty.alliance_b_deposit);
+        let penalty_amount = if (is_terminal) {
+            deposit_total
+        } else {
+            let calculated = treaty.deposit_required * penalty_pct / 100;
+            if (calculated > deposit_total) { deposit_total } else { calculated }
+        };
+        if (penalty_amount > 0) {
+            let payout = coin::take(&mut treaty.alliance_b_deposit, penalty_amount, ctx);
+            transfer::public_transfer(payout, treaty.alliance_a_leader);
+        };
+        if (is_terminal) {
+            let a_remaining = balance::value(&treaty.alliance_a_deposit);
+            if (a_remaining > 0) {
+                let a_refund = coin::from_balance(
+                    balance::withdraw_all(&mut treaty.alliance_a_deposit), ctx
+                );
+                transfer::public_transfer(a_refund, treaty.alliance_a_leader);
+            };
+        };
+        (treaty.alliance_b_leader, treaty.alliance_a_leader, penalty_amount)
+    };
+
+    // Terminal violation (3rd strike) ends the treaty
+    if (is_terminal) {
+        treaty.status = STATUS_VIOLATED;
+    };
 
     // Create immutable violation record
     let record = ViolationRecord {
